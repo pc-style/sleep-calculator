@@ -150,7 +150,7 @@ function getWakeupEaseIndicator(qualityScore: number): React.ReactElement {
 
 export default function Home() {
   const { t, timeFormat, theme } = useApp();
-  const [results, setResults] = useState<Array<{time: number, hours: number, cycles: number}>>([]);
+  const [results, setResults] = useState<Array<{time: number, hours: number, cycles: number, quality: number, recommended: boolean}>>([]);
 
   // Initialize the form
   const form = useForm<z.infer<typeof formSchema>>({
