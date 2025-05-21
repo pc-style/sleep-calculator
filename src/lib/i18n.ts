@@ -42,6 +42,8 @@ export const translations: Record<string, Translations> = {
     "results.footer": "Sleep cycles typically last about 90 minutes. Waking up at the end of a cycle, rather than in the middle, helps you feel more rested.",
     "results.hours": "hours of sleep",
     "results.cycles": "complete cycles",
+    "results.quality": "Sleep quality",
+    "results.recommended": "Recommended",
     
     // Settings
     "settings.title": "Settings",
@@ -75,6 +77,8 @@ export const translations: Record<string, Translations> = {
     "results.footer": "Cykle snu trwają zwykle około 90 minut. Budzenie się pod koniec cyklu, a nie w jego środku, pomaga czuć się bardziej wypoczętym.",
     "results.hours": "godzin snu",
     "results.cycles": "pełne cykle",
+    "results.quality": "Jakość snu",
+    "results.recommended": "Zalecane",
     
     // Settings
     "settings.title": "Ustawienia",

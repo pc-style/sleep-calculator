@@ -1,6 +1,7 @@
+
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -28,7 +29,7 @@ import {
 import { Settings } from "@/components/settings";
 import { useApp } from "@/lib/app-context";
 import { AnimatedComponent, AnimatedList, AnimatedText } from "@/components/animated-component";
-import { fadeIn, slideUp, pulse, wave, floating, slideInLeft, slideInRight } from "@/lib/animations";
+import { fadeIn, slideUp, pulse, floating, slideInLeft, slideInRight } from "@/lib/animations";
 
 // Define the form schema with Zod
 const formSchema = z.object({
@@ -42,6 +43,33 @@ const formSchema = z.object({
 
 // Define the sleep cycle duration in minutes
 const SLEEP_CYCLE_DURATION = 90; // 90 minutes per cycle
+
+// Define the sleep stages within a cycle (in minutes)
+const SLEEP_STAGES = {
+  light: 25, // Light sleep (Stage 1 & 2)
+  deep: 35, // Deep sleep (Stage 3)
+  rem: 30, // REM sleep
+};
+
+// Define the recommended sleep duration ranges in hours
+const RECOMMENDED_SLEEP_RANGES = {
+  min: 7, // Minimum recommended sleep (7 hours)
+  optimal: 8, // Optimal sleep amount (8 hours)
+  max: 9, // Maximum recommended sleep (9 hours)
+};
+
+// Sleep quality factors
+const QUALITY_FACTORS = {
+  completeCycle: 1.3, // Bonus for waking up at the end of a complete cycle
+  lightSleepWakeup: 1.5, // Major bonus for waking up during light sleep phase
+  remSleepWakeup: 0.7, // Major penalty for waking up during REM sleep
+  deepSleepWakeup: 0.5, // Severe penalty for waking up during deep sleep
+  optimalDuration: 1.2, // Bonus for sleeping within the optimal range
+  tooShort: 0.7, // Penalty for too little sleep
+  tooLong: 0.8, // Penalty for too much sleep
+  earlyMorning: 1.1, // Bonus for waking up with natural light (5:30-8:30 AM)
+  consistentWakeup: 1.2, // Bonus for consistent wake-up time
+};
 
 // Helper function to convert time string to minutes since midnight
 // Commented out as it's not currently used
@@ -64,6 +92,59 @@ function formatTime(minutes: number, format: "12h" | "24h"): string {
     const ampm = hours >= 12 ? "PM" : "AM";
     const displayHours = hours % 12 || 12; // Convert 0 to 12 for 12 AM
     return `${displayHours}:${mins.toString().padStart(2, "0")} ${ampm}`;
+  }
+}
+
+// Helper function to determine which sleep stage the person would be in at wake-up time
+function getSleepStageDescription(wakeUpTime: number, cycles: number): string {
+  // Calculate total sleep minutes
+  const sleepMinutes = cycles * SLEEP_CYCLE_DURATION;
+  
+  // Calculate which stage of sleep the person would be in at wake-up time
+  const minutesIntoLastCycle = sleepMinutes % SLEEP_CYCLE_DURATION;
+  
+  if (minutesIntoLastCycle <= SLEEP_STAGES.light) {
+    return "Light sleep stage - Easiest to wake up";
+  } else if (minutesIntoLastCycle <= SLEEP_STAGES.light + SLEEP_STAGES.deep) {
+    return "Deep sleep stage - Harder to wake up";
+  } else {
+    return "REM sleep stage - May feel groggy";
+  }
+}
+
+// Helper function to provide a visual indicator of how easy it would be to wake up
+function getWakeupEaseIndicator(qualityScore: number): React.ReactElement {
+  // Convert quality score to a simple indicator
+  if (qualityScore >= 1.3) {
+    return (
+      <span className="text-green-500 font-medium">
+        ★★★★★ Very easy to wake up
+      </span>
+    );
+  } else if (qualityScore >= 1.1) {
+    return (
+      <span className="text-green-400 font-medium">
+        ★★★★☆ Easy to wake up
+      </span>
+    );
+  } else if (qualityScore >= 0.9) {
+    return (
+      <span className="text-yellow-500 font-medium">
+        ★★★☆☆ Moderate
+      </span>
+    );
+  } else if (qualityScore >= 0.7) {
+    return (
+      <span className="text-orange-500 font-medium">
+        ★★☆☆☆ Difficult
+      </span>
+    );
+  } else {
+    return (
+      <span className="text-red-500 font-medium">
+        ★☆☆☆☆ Very difficult
+      </span>
+    );
   }
 }
 
@@ -92,40 +173,36 @@ export default function Home() {
     // Convert times to minutes since midnight
     const bedtimeMinutes = bedtimeHour * 60 + bedtimeMinute;
     const actualSleepStartMinutes = bedtimeMinutes + values.fallAsleepTime;
-    const earliestWakeUpMinutes = wakeUpHour * 60 + wakeUpMinute;
+    const targetWakeUpMinutes = wakeUpHour * 60 + wakeUpMinute;
 
     // Calculate wake-up times based on sleep cycles
-    const wakeUpTimes: Array<{time: number, hours: number, cycles: number}> = [];
+    const wakeUpTimes: Array<{time: number, hours: number, cycles: number, quality: number, recommended: boolean}> = [];
     
     // Calculate time difference (accounting for crossing midnight)
-    let minutesUntilWakeUp = earliestWakeUpMinutes - actualSleepStartMinutes;
+    let minutesUntilWakeUp = targetWakeUpMinutes - actualSleepStartMinutes;
     if (minutesUntilWakeUp <= 0) {
       // If wake-up time is earlier in the day than sleep time, add 24 hours
       minutesUntilWakeUp += 24 * 60;
     }
 
-    // Find the number of complete sleep cycles that fit before the earliest wake-up time
+    // Find the number of complete sleep cycles that fit before the target wake-up time
     const cyclesBeforeWakeUp = Math.floor(minutesUntilWakeUp / SLEEP_CYCLE_DURATION);
     
-    // Generate wake-up times around the ideal cycles
-    // We'll show 4 options: 2 before and 2 after the target wake-up time
+    // Calculate how many complete cycles fit in the available time
+    
+    // Generate a range of wake-up times around the target time
+    // We'll show options for different numbers of sleep cycles
     const cyclesToShow = [];
     
-    // If we have at least 3 complete cycles, show options starting from 2 cycles before
-    if (cyclesBeforeWakeUp >= 3) {
-      cyclesToShow.push(cyclesBeforeWakeUp - 2);
+    // Show at least 5 cycles (minimum recommended sleep)
+    const minCycles = Math.max(5, cyclesBeforeWakeUp - 2);
+    // Show up to 7 cycles (maximum recommended sleep)
+    const maxCycles = Math.min(cyclesBeforeWakeUp + 2, 7);
+    
+    // Generate all cycle options in the range
+    for (let i = minCycles; i <= maxCycles; i++) {
+      cyclesToShow.push(i);
     }
-    
-    // If we have at least 2 complete cycles, show options starting from 1 cycle before
-    if (cyclesBeforeWakeUp >= 2) {
-      cyclesToShow.push(cyclesBeforeWakeUp - 1);
-    }
-    
-    // Always show the closest cycle to the target wake-up time
-    cyclesToShow.push(cyclesBeforeWakeUp);
-    
-    // Show one cycle after
-    cyclesToShow.push(cyclesBeforeWakeUp + 1);
     
     // Calculate the actual wake-up times and sleep durations
     for (const cycles of cyclesToShow) {
@@ -137,31 +214,84 @@ export default function Home() {
       // Calculate the wake-up time in minutes since midnight
       const wakeUpTimeMinutes = (actualSleepStartMinutes + sleepMinutes) % (24 * 60);
       
-      // Calculate sleep duration in hours (always based on actual cycles, not clock time)
+      // Calculate sleep duration in hours
       const sleepDurationHours = sleepMinutes / 60;
+      
+      // Calculate sleep quality score based on multiple factors
+      let qualityScore = 1.0;
+      
+      // Factor 1: Sleep stage at wake-up time (most important factor)
+      // Calculate which stage of sleep the person would be in at wake-up time
+      const minutesIntoLastCycle = sleepMinutes % SLEEP_CYCLE_DURATION;
+      
+      if (minutesIntoLastCycle <= SLEEP_STAGES.light) {
+        // Waking up during light sleep (ideal - easiest to wake up)
+        qualityScore *= QUALITY_FACTORS.lightSleepWakeup;
+      } else if (minutesIntoLastCycle <= SLEEP_STAGES.light + SLEEP_STAGES.deep) {
+        // Waking up during deep sleep (worst - hardest to wake up)
+        qualityScore *= QUALITY_FACTORS.deepSleepWakeup;
+      } else {
+        // Waking up during REM sleep (not ideal - may feel groggy)
+        qualityScore *= QUALITY_FACTORS.remSleepWakeup;
+      }
+      
+      // Factor 2: Complete cycle bonus (only if very close to end of cycle)
+      const minutesToCycleEnd = SLEEP_CYCLE_DURATION - (minutesIntoLastCycle % SLEEP_CYCLE_DURATION);
+      if (minutesToCycleEnd < 5 || minutesIntoLastCycle < 5) {
+        qualityScore *= QUALITY_FACTORS.completeCycle;
+      }
+      
+      // Factor 3: Duration-based quality
+      if (sleepDurationHours < RECOMMENDED_SLEEP_RANGES.min) {
+        qualityScore *= QUALITY_FACTORS.tooShort;
+      } else if (sleepDurationHours > RECOMMENDED_SLEEP_RANGES.max) {
+        qualityScore *= QUALITY_FACTORS.tooLong;
+      } else if (
+        sleepDurationHours >= RECOMMENDED_SLEEP_RANGES.min && 
+        sleepDurationHours <= RECOMMENDED_SLEEP_RANGES.max
+      ) {
+        qualityScore *= QUALITY_FACTORS.optimalDuration;
+      }
+      
+      // Factor 4: Early morning bonus (waking up with natural light is beneficial)
+      // Convert wake-up time to hours for easier comparison
+      const wakeUpHour = wakeUpTimeMinutes / 60;
+      if (wakeUpHour >= 5.5 && wakeUpHour <= 8.5) {
+        qualityScore *= QUALITY_FACTORS.earlyMorning;
+      }
+      
+      // Factor 5: Proximity to target wake-up time (for consistency)
+      // Calculate how close this wake-up time is to the target
+      let timeDistance = Math.abs(wakeUpTimeMinutes - targetWakeUpMinutes);
+      if (timeDistance > 12 * 60) { // If the difference is more than 12 hours, adjust
+        timeDistance = 24 * 60 - timeDistance;
+      }
+      // If within 30 minutes of target time, apply consistency bonus
+      if (timeDistance <= 30) {
+        qualityScore *= QUALITY_FACTORS.consistentWakeup;
+      }
+      // Normalize to a 0-1 scale where 1 is exact match and 0 is 3+ hours away
+      const proximityFactor = Math.max(0, 1 - (timeDistance / (3 * 60)));
+      // Apply a small adjustment based on proximity
+      qualityScore *= (0.9 + (0.2 * proximityFactor));
+      
+      // Determine if this is a recommended option
+      const isRecommended = (
+        sleepDurationHours >= RECOMMENDED_SLEEP_RANGES.min && 
+        sleepDurationHours <= RECOMMENDED_SLEEP_RANGES.max
+      );
       
       wakeUpTimes.push({
         time: wakeUpTimeMinutes,
         hours: sleepDurationHours,
-        cycles: cycles
+        cycles: cycles,
+        quality: parseFloat(qualityScore.toFixed(2)),
+        recommended: isRecommended
       });
     }
     
-    // Sort by wake-up time
-    wakeUpTimes.sort((a, b) => {
-      // If times cross midnight, adjust for proper sorting
-      let timeA = a.time;
-      let timeB = b.time;
-      
-      // If one time is before midnight and one is after, adjust for comparison
-      if (timeA < actualSleepStartMinutes && timeB > actualSleepStartMinutes) {
-        timeA += 24 * 60;
-      } else if (timeB < actualSleepStartMinutes && timeA > actualSleepStartMinutes) {
-        timeB += 24 * 60;
-      }
-      
-      return timeA - timeB;
-    });
+    // Sort by quality score (highest first)
+    wakeUpTimes.sort((a, b) => b.quality - a.quality);
     
     setResults(wakeUpTimes);
   }
@@ -328,16 +458,35 @@ export default function Home() {
               </CardHeader>
               <CardContent>
                 <AnimatedList className="space-y-2">
-                  {results.map((result: {time: number, hours: number, cycles: number}, index: number) => (
+                  {results.map((result: {time: number, hours: number, cycles: number, quality: number, recommended: boolean}, index: number) => (
                     <motion.li 
                       key={index} 
-                      className="p-3 bg-muted rounded-md"
+                      className={`p-3 ${result.recommended ? 'bg-primary/20 border border-primary/30' : 'bg-muted'} rounded-md`}
                       whileHover={{ scale: 1.02 }}
                       transition={{ type: "spring", stiffness: 400, damping: 10 }}
                     >
-                      <AnimatedComponent animation={wave}>
-                        {formatTime(result.time, timeFormat)} ({result.hours.toFixed(1)} {t("results.hours")}, {result.cycles} {t("results.cycles")})
-                      </AnimatedComponent>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="text-lg font-semibold">{formatTime(result.time, timeFormat)}</div>
+                          <div className="text-sm">
+                            {result.hours.toFixed(1)} {t("results.hours")} ({result.cycles} {t("results.cycles")})
+                            {result.recommended && (
+                              <span className="ml-2 text-primary">✓ {t("results.recommended")}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {getSleepStageDescription(result.time, result.cycles)}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-medium">
+                            {t("results.quality")}: {Math.round(result.quality * 100)}%
+                          </div>
+                          <div className="text-xs mt-1">
+                            {getWakeupEaseIndicator(result.quality)}
+                          </div>
+                        </div>
+                      </div>
                     </motion.li>
                   ))}
                 </AnimatedList>
